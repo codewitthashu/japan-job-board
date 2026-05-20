@@ -1,5 +1,5 @@
 import axios from "axios";
-import cheerio from "cheerio";
+
 export interface Job {
   title: string;
   company: string;
@@ -54,71 +54,117 @@ const fallbackJobs: Job[] = [
 ];
 
 export async function scrapeWantedly(): Promise<Job[]> {
-  const url = "https://www.wantedly.com/projects?q=React&type=all";
+  const url = "https://www.wantedly.com/projects?q=MERN&type=all";
+  
   try {
     console.log("Fetching Wantedly...");
     const { data } = await axios.get(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html",
         "Accept-Language": "en-US,en;q=0.9",
       },
-      timeout: 10000,
+      timeout: 15000,
     });
 
-    console.log("Page fetched, length:", data.length);
-    const $ = cheerio.load(data);
-    const jobs: Job[] = [];
-
-    // Log how many project items we find
-    const items = $(".project-list-item");
-    console.log(`Found ${items.length} project-list-item elements`);
-
-    // If no items, try alternative selectors
-    if (items.length === 0) {
-      console.log("Trying alternative selectors...");
-      // Maybe the structure uses different class names
-      $("a[href*='/projects/']").each((_, el) => {
-        const href = $(el).attr("href");
-        if (href && href.includes("/projects/")) {
-          console.log("Found link:", href);
-        }
-      });
-    }
-
-    items.each((_, element) => {
-      const title = $(element).find(".project-title").text().trim() 
-                 || $(element).find("h2").text().trim()
-                 || $(element).find("[class*='title']").text().trim();
-      const company = $(element).find(".company-name").text().trim()
-                    || $(element).find("[class*='company']").text().trim();
-      const location = $(element).find(".project-location").text().trim() 
-                     || "Tokyo/Remote";
-      const link = $(element).find("a").attr("href");
-      const technologies: string[] = [];
-      $(element).find(".project-skill-item, .skill-tag, [class*='skill']").each((_, skill) => {
-        const tech = $(skill).text().trim();
-        if (tech) technologies.push(tech);
-      });
-
-      if (title) {
-        jobs.push({
-          title,
-          company,
-          location,
-          url: link ? (link.startsWith("http") ? link : `https://www.wantedly.com${link}`) : "#",
-          technologies,
-          postedDate: "Recent",
-        });
-      }
-    });
-
-    console.log(`Scraped ${jobs.length} jobs`);
-    if (jobs.length === 0) {
-      console.log("Returning fallback data instead");
+    // Extract the JSON from the <script id="__NEXT_DATA__"> tag
+    const match = data.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
+    if (!match) {
+      console.log("Could not find __NEXT_DATA__ script tag");
       return fallbackJobs;
     }
+
+    const parsed = JSON.parse(match[1]);
+    
+    // Navigate to the job listings in the GraphQL initial state
+    const initialState = parsed?.props?.pageProps?.__apollo?.graphqlGatewayInitialState;
+    if (!initialState) {
+      console.log("Could not find GraphQL initial state");
+      return fallbackJobs;
+    }
+
+    const jobs: Job[] = [];
+    
+    // Get the searched job posts from the index page
+    const searchResults = initialState['ROOT_QUERY']?.projectIndexPageJobPostIndex?.searchedJobPosts;
+    if (!searchResults?.edges) {
+      console.log("Could not find searched job posts");
+      return fallbackJobs;
+    }
+
+    console.log(`Found ${searchResults.edges.length} job posts from GraphQL`);
+
+    // Process each job
+    for (const edge of searchResults.edges) {
+      const jobPostRef = edge?.node?.jobPost?.__ref;
+      if (!jobPostRef) continue;
+
+      // The ref looks like: "JobPost:{\"id\":\"1736360\"}"
+      const jobPostIdMatch = jobPostRef.match(/JobPost:\{.*"id":"([^"]+)".*\}/);
+      if (!jobPostIdMatch) continue;
+
+      const jobPostKey = jobPostRef;
+      const jobPost = initialState[jobPostKey];
+      if (!jobPost) continue;
+
+      // Get company info
+      let companyName = "Unknown Company";
+      const companyRef = jobPost?.company?.__ref;
+      if (companyRef) {
+        const company = initialState[companyRef];
+        if (company?.name) {
+          companyName = company.name;
+        }
+      }
+
+      const title = jobPost.title || "Untitled Position";
+      const occupationName = jobPost.occupationName || "";
+      const publishedAt = jobPost.publishedAt 
+        ? new Date(jobPost.publishedAt).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })
+        : "Recent";
+      
+      // Build URL
+      const jobId = jobPost.id || "";
+      const companySlug = initialState[companyRef]?.slug || "unknown";
+      const jobUrl = `https://www.wantedly.com/companies/${companySlug}/post_articles/${jobId}`;
+
+      // Extract technologies/occupation as tags
+      const technologies: string[] = [];
+      if (occupationName) {
+        technologies.push(occupationName);
+      }
+      
+      // Add hiring types as tags
+      if (jobPost.hiringTypes && Array.isArray(jobPost.hiringTypes)) {
+        for (const ht of jobPost.hiringTypes) {
+          if (ht?.label) technologies.push(ht.label);
+        }
+      }
+
+      // Location: Wantedly often doesn't provide explicit location, but we can infer
+      const location = jobPost.country === "JP" ? "Japan" : "Remote / Japan";
+
+      if (title && companyName) {
+        jobs.push({
+          title,
+          company: companyName,
+          location,
+          url: jobUrl,
+          technologies: technologies.slice(0, 5), // Limit to 5 tags
+          postedDate: publishedAt,
+        });
+      }
+    }
+
+    console.log(`Successfully scraped ${jobs.length} jobs from Wantedly GraphQL`);
+    
+    if (jobs.length === 0) {
+      console.log("Returning fallback data");
+      return fallbackJobs;
+    }
+
     return jobs;
+    
   } catch (error: any) {
     console.error("Error scraping Wantedly:", error.message);
     console.log("Returning fallback data");
