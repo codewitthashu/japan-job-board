@@ -7,10 +7,25 @@
   postedDate: string;
 }
 
-export default function JobCard({ job }: { job: Job }) {
+interface JobCardProps {
+  job: Job;
+  isSaved: boolean;
+  onToggleSave: (title: string) => void;
+}
+
+export default function JobCard({ job, isSaved, onToggleSave }: JobCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">{job.title}</h2>
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow relative">
+      {/* Save button */}
+      <button
+        onClick={() => onToggleSave(job.title)}
+        className="absolute top-3 right-3 text-lg cursor-pointer"
+        title={isSaved ? "Unsave" : "Save"}
+      >
+        {isSaved ? "⭐" : "☆"}
+      </button>
+
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 pr-8">{job.title}</h2>
       <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
         {job.company} — {job.location}
       </p>

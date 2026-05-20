@@ -16,17 +16,24 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [dark, setDark] = useState(false);
+  const [savedJobs, setSavedJobs] = useState<string[]>([]);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  // Load dark mode preference
+  // Load dark mode & saved jobs from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("darkMode");
-    if (saved === "true") {
+    const savedDark = localStorage.getItem("darkMode");
+    if (savedDark === "true") {
       setDark(true);
       document.documentElement.classList.add("dark");
     }
+    const saved = localStorage.getItem("savedJobs");
+    if (saved) {
+      try {
+        setSavedJobs(JSON.parse(saved));
+      } catch {}
+    }
   }, []);
 
-  // Apply dark class whenever `dark` changes
   useEffect(() => {
     if (dark) {
       document.documentElement.classList.add("dark");
@@ -37,6 +44,7 @@ export default function App() {
     }
   }, [dark]);
 
+  // Fetch jobs
   useEffect(() => {
     axios.get("http://localhost:4000/api/jobs")
       .then((res) => setJobs(res.data))
@@ -44,10 +52,25 @@ export default function App() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = jobs.filter((job) =>
-    job.title.toLowerCase().includes(search.toLowerCase()) ||
-    job.technologies.some((t) => t.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Toggle save/un-save
+  const toggleSave = (title: string) => {
+    setSavedJobs((prev) => {
+      const newSaved = prev.includes(title)
+        ? prev.filter((t) => t !== title)
+        : [...prev, title];
+      localStorage.setItem("savedJobs", JSON.stringify(newSaved));
+      return newSaved;
+    });
+  };
+
+  // Filter logic
+  const filtered = jobs.filter((job) => {
+    const matchesSearch =
+      job.title.toLowerCase().includes(search.toLowerCase()) ||
+      job.technologies.some((t) => t.toLowerCase().includes(search.toLowerCase()));
+    const saved = savedJobs.includes(job.title);
+    return showSavedOnly ? saved : matchesSearch;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -73,13 +96,26 @@ export default function App() {
 
       {/* Main */}
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <input
-          type="text"
-          placeholder="Search by title or tech (e.g. React, Node.js)..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-8 text-lg bg-white dark:bg-gray-800 dark:text-white"
-        />
+        <div className="flex gap-4 mb-6 items-center">
+          <input
+            type="text"
+            placeholder="Search by title or tech..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg bg-white dark:bg-gray-800 dark:text-white"
+            disabled={showSavedOnly}
+          />
+          <button
+            onClick={() => setShowSavedOnly(!showSavedOnly)}
+            className={`px-4 py-3 rounded-lg font-medium text-sm transition ${
+              showSavedOnly
+                ? "bg-yellow-400 text-gray-900"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+            }`}
+          >
+            {showSavedOnly ? "★ Saved" : "☆ Save Filter"}
+          </button>
+        </div>
 
         {loading && <p className="text-gray-500 dark:text-gray-400 text-center">Loading jobs...</p>}
         {!loading && filtered.length === 0 && (
@@ -88,7 +124,12 @@ export default function App() {
 
         <div className="space-y-4">
           {filtered.map((job, i) => (
-            <JobCard key={i} job={job} />
+            <JobCard
+              key={i}
+              job={job}
+              isSaved={savedJobs.includes(job.title)}
+              onToggleSave={toggleSave}
+            />
           ))}
         </div>
       </main>
