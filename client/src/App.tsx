@@ -30,7 +30,7 @@ export default function App() {
     if (saved) {
       try {
         setSavedJobs(JSON.parse(saved));
-      } catch {}
+      } catch { }
     }
   }, []);
 
@@ -46,7 +46,7 @@ export default function App() {
 
   // Fetch jobs
   useEffect(() => {
-    axios.get("http://localhost:4000/api/jobs")
+    axios.get("https://japan-job-board.onrender.com/api/jobs")
       .then((res) => setJobs(res.data))
       .catch(() => console.log("Backend not running"))
       .finally(() => setLoading(false));
@@ -107,11 +107,10 @@ export default function App() {
           />
           <button
             onClick={() => setShowSavedOnly(!showSavedOnly)}
-            className={`px-4 py-3 rounded-lg font-medium text-sm transition ${
-              showSavedOnly
+            className={`px-4 py-3 rounded-lg font-medium text-sm transition ${showSavedOnly
                 ? "bg-yellow-400 text-gray-900"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-            }`}
+              }`}
           >
             {showSavedOnly ? "★ Saved" : "☆ Save Filter"}
           </button>
