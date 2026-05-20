@@ -47,7 +47,7 @@ export default function App() {
   // Fetch jobs
   useEffect(() => {
     axios.get("https://japan-job-board.onrender.com/api/jobs")
-      .then((res) => setJobs(res.data))
+      .then((res: { data: Job[] }) => setJobs(res.data))
       .catch(() => console.log("Backend not running"))
       .finally(() => setLoading(false));
   }, []);
