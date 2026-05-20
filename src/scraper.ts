@@ -55,7 +55,6 @@ const fallbackJobs: Job[] = [
 
 export async function scrapeWantedly(): Promise<Job[]> {
   const url = "https://www.wantedly.com/projects?q=MERN&type=all";
-  
   try {
     console.log("Fetching Wantedly...");
     const { data } = await axios.get(url, {
@@ -67,7 +66,7 @@ export async function scrapeWantedly(): Promise<Job[]> {
       timeout: 15000,
     });
 
-    // Extract the JSON from the <script id="__NEXT_DATA__"> tag
+    // Extract the JSON from <script id="__NEXT_DATA__">
     const match = data.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
     if (!match) {
       console.log("Could not find __NEXT_DATA__ script tag");
@@ -75,73 +74,74 @@ export async function scrapeWantedly(): Promise<Job[]> {
     }
 
     const parsed = JSON.parse(match[1]);
-    
-    // Navigate to the job listings in the GraphQL initial state
     const initialState = parsed?.props?.pageProps?.__apollo?.graphqlGatewayInitialState;
     if (!initialState) {
       console.log("Could not find GraphQL initial state");
       return fallbackJobs;
     }
 
-    const jobs: Job[] = [];
-    
-    // Get the searched job posts from the index page
-    const searchResults = initialState['ROOT_QUERY']?.projectIndexPageJobPostIndex?.searchedJobPosts;
-    if (!searchResults?.edges) {
-      console.log("Could not find searched job posts");
+    // Find the dynamic key that starts with "searchedJobPosts("
+    const rootQuery = initialState['ROOT_QUERY'];
+    if (!rootQuery?.projectIndexPageJobPostIndex) {
+      console.log("Could not find projectIndexPageJobPostIndex");
       return fallbackJobs;
     }
 
-    console.log(`Found ${searchResults.edges.length} job posts from GraphQL`);
+    const idx = rootQuery.projectIndexPageJobPostIndex;
+    let searchKey = '';
+    for (const key of Object.keys(idx)) {
+      if (key.startsWith('searchedJobPosts(')) {
+        searchKey = key;
+        break;
+      }
+    }
+    if (!searchKey) {
+      console.log("Could not find searchedJobPosts key");
+      return fallbackJobs;
+    }
 
-    // Process each job
-    for (const edge of searchResults.edges) {
+    const searchResults = idx[searchKey];
+    const edges = searchResults?.edges;
+    if (!edges || !Array.isArray(edges)) {
+      console.log("Could not find searched job post edges");
+      return fallbackJobs;
+    }
+
+    console.log(`Found ${edges.length} job posts from Wantedly`);
+
+    const jobs: Job[] = [];
+    for (const edge of edges) {
       const jobPostRef = edge?.node?.jobPost?.__ref;
       if (!jobPostRef) continue;
 
-      // The ref looks like: "JobPost:{\"id\":\"1736360\"}"
-      const jobPostIdMatch = jobPostRef.match(/JobPost:\{.*"id":"([^"]+)".*\}/);
-      if (!jobPostIdMatch) continue;
-
-      const jobPostKey = jobPostRef;
-      const jobPost = initialState[jobPostKey];
+      const jobPost = initialState[jobPostRef];
       if (!jobPost) continue;
 
-      // Get company info
       let companyName = "Unknown Company";
       const companyRef = jobPost?.company?.__ref;
       if (companyRef) {
         const company = initialState[companyRef];
-        if (company?.name) {
-          companyName = company.name;
-        }
+        if (company?.name) companyName = company.name;
       }
 
       const title = jobPost.title || "Untitled Position";
       const occupationName = jobPost.occupationName || "";
-      const publishedAt = jobPost.publishedAt 
+      const publishedAt = jobPost.publishedAt
         ? new Date(jobPost.publishedAt).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })
         : "Recent";
-      
-      // Build URL
+
       const jobId = jobPost.id || "";
       const companySlug = initialState[companyRef]?.slug || "unknown";
       const jobUrl = `https://www.wantedly.com/companies/${companySlug}/post_articles/${jobId}`;
 
-      // Extract technologies/occupation as tags
       const technologies: string[] = [];
-      if (occupationName) {
-        technologies.push(occupationName);
-      }
-      
-      // Add hiring types as tags
+      if (occupationName) technologies.push(occupationName);
       if (jobPost.hiringTypes && Array.isArray(jobPost.hiringTypes)) {
         for (const ht of jobPost.hiringTypes) {
           if (ht?.label) technologies.push(ht.label);
         }
       }
 
-      // Location: Wantedly often doesn't provide explicit location, but we can infer
       const location = jobPost.country === "JP" ? "Japan" : "Remote / Japan";
 
       if (title && companyName) {
@@ -150,24 +150,16 @@ export async function scrapeWantedly(): Promise<Job[]> {
           company: companyName,
           location,
           url: jobUrl,
-          technologies: technologies.slice(0, 5), // Limit to 5 tags
+          technologies: technologies.slice(0, 5),
           postedDate: publishedAt,
         });
       }
     }
 
-    console.log(`Successfully scraped ${jobs.length} jobs from Wantedly GraphQL`);
-    
-    if (jobs.length === 0) {
-      console.log("Returning fallback data");
-      return fallbackJobs;
-    }
-
-    return jobs;
-    
+    console.log(`Successfully scraped ${jobs.length} jobs from Wantedly`);
+    return jobs.length ? jobs : fallbackJobs;
   } catch (error: any) {
     console.error("Error scraping Wantedly:", error.message);
-    console.log("Returning fallback data");
     return fallbackJobs;
   }
 }
