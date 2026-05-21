@@ -11,6 +11,10 @@ interface Job {
   postedDate: string;
 }
 
+// ✅ New helper: detect Japanese characters
+const isJapaneseText = (text: string) =>
+  /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(text);
+
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [search, setSearch] = useState("");
@@ -18,6 +22,7 @@ export default function App() {
   const [dark, setDark] = useState(false);
   const [savedJobs, setSavedJobs] = useState<string[]>([]);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [langFilter, setLangFilter] = useState<"all" | "english" | "japanese">("all");
 
   // Load dark mode & saved jobs from localStorage
   useEffect(() => {
@@ -63,13 +68,22 @@ export default function App() {
     });
   };
 
-  // Filter logic
+  // ✅ Updated filter logic with language detection
   const filtered = jobs.filter((job) => {
     const matchesSearch =
       job.title.toLowerCase().includes(search.toLowerCase()) ||
       job.technologies.some((t) => t.toLowerCase().includes(search.toLowerCase()));
+
     const saved = savedJobs.includes(job.title);
-    return showSavedOnly ? saved : matchesSearch;
+    const matchesSaved = showSavedOnly ? saved : true;
+
+    const jobTitleJP = isJapaneseText(job.title);
+    const matchesLang =
+      langFilter === "all" ||
+      (langFilter === "japanese" && jobTitleJP) ||
+      (langFilter === "english" && !jobTitleJP);
+
+    return matchesSaved && matchesLang && (showSavedOnly ? true : matchesSearch);
   });
 
   return (
@@ -107,13 +121,31 @@ export default function App() {
           />
           <button
             onClick={() => setShowSavedOnly(!showSavedOnly)}
-            className={`px-4 py-3 rounded-lg font-medium text-sm transition ${showSavedOnly
+            className={`px-4 py-3 rounded-lg font-medium text-sm transition ${
+              showSavedOnly
                 ? "bg-yellow-400 text-gray-900"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-              }`}
+            }`}
           >
             {showSavedOnly ? "★ Saved" : "☆ Save Filter"}
           </button>
+
+          {/* ✅ Language filter toggle */}
+          <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+            {(["all", "english", "japanese"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setLangFilter(mode)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                  langFilter === mode
+                    ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow"
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
+                }`}
+              >
+                {mode === "all" ? "All" : mode === "english" ? "English" : "日本語"}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading && <p className="text-gray-500 dark:text-gray-400 text-center">Loading jobs...</p>}
