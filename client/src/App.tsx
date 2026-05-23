@@ -11,8 +11,8 @@ interface Job {
   postedDate: string;
 }
 
-// ✅ New helper: detect Japanese characters
-const isJapaneseText = (text: string) =>
+// Helper to detect Japanese text (hiragana, katakana, kanji)
+const hasJapanese = (text: string) =>
   /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(text);
 
 export default function App() {
@@ -35,7 +35,7 @@ export default function App() {
     if (saved) {
       try {
         setSavedJobs(JSON.parse(saved));
-      } catch { }
+      } catch {}
     }
   }, []);
 
@@ -49,7 +49,6 @@ export default function App() {
     }
   }, [dark]);
 
-  // Fetch jobs
   useEffect(() => {
     axios.get("https://japan-job-board.onrender.com/api/jobs")
       .then((res: { data: Job[] }) => setJobs(res.data))
@@ -57,7 +56,6 @@ export default function App() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Toggle save/un-save
   const toggleSave = (title: string) => {
     setSavedJobs((prev) => {
       const newSaved = prev.includes(title)
@@ -68,22 +66,17 @@ export default function App() {
     });
   };
 
-  // ✅ Updated filter logic with language detection
+  // Combined filter: search + saved + language
   const filtered = jobs.filter((job) => {
     const matchesSearch =
       job.title.toLowerCase().includes(search.toLowerCase()) ||
       job.technologies.some((t) => t.toLowerCase().includes(search.toLowerCase()));
-
     const saved = savedJobs.includes(job.title);
-    const matchesSaved = showSavedOnly ? saved : true;
+    if (showSavedOnly) return saved;
 
-    const jobTitleJP = isJapaneseText(job.title);
-    const matchesLang =
-      langFilter === "all" ||
-      (langFilter === "japanese" && jobTitleJP) ||
-      (langFilter === "english" && !jobTitleJP);
-
-    return matchesSaved && matchesLang && (showSavedOnly ? true : matchesSearch);
+    if (langFilter === "english") return !hasJapanese(job.title);
+    if (langFilter === "japanese") return hasJapanese(job.title);
+    return matchesSearch;
   });
 
   return (
@@ -110,7 +103,7 @@ export default function App() {
 
       {/* Main */}
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex gap-4 mb-6 items-center">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 items-center">
           <input
             type="text"
             placeholder="Search by title or tech..."
@@ -129,23 +122,23 @@ export default function App() {
           >
             {showSavedOnly ? "★ Saved" : "☆ Save Filter"}
           </button>
+        </div>
 
-          {/* ✅ Language filter toggle */}
-          <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
-            {(["all", "english", "japanese"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setLangFilter(mode)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                  langFilter === mode
-                    ? "bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow"
-                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600"
-                }`}
-              >
-                {mode === "all" ? "All" : mode === "english" ? "English" : "日本語"}
-              </button>
-            ))}
-          </div>
+        {/* Language filter bar */}
+        <div className="flex gap-2 mb-6">
+          {(["all", "english", "japanese"] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => setLangFilter(l)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                langFilter === l
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+              }`}
+            >
+              {l === "all" ? "All" : l === "english" ? "🇬🇧 English" : "🇯🇵 Japanese"}
+            </button>
+          ))}
         </div>
 
         {loading && <p className="text-gray-500 dark:text-gray-400 text-center">Loading jobs...</p>}
